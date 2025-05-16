@@ -1,0 +1,124 @@
+\section{Literature Review}
+This chapter provides a comprehensive overview of the fundamental principles of Named Data Networking (NDN), the challenges of producer mobility, and an analysis of existing literature and solutions. The chapter is organised as follows. First, we briefly describe the core NDN architecture and the inherent mobility problems. Next, we review related work from both ICN and IP networking perspectives, summarising existing solutions, and identifying their limitations. Finally, we discuss and compare flood-based mobility proposals with an emphasis on the gap that motivates our work on OptoFlood.
+
+\subsection{NDN Background and Producer Mobility Problem}
+Named Data Networking (NDN) shifts from the traditional IP-based host-centric paradigm to a data-centric approach, where data are identified by names rather than addresses. Communication in NDN relies on two primary types of packets: \InterestPackets, which consumers send to request data by specifying a data name; and \DataPackets, which carry the requested content along with additional metadata (Figure~\ref{NDN Packets}). Both types of packet are encoded in a concise Type-Length-Value (TLV) format, allowing efficient parsing and future extensibility \cite{Zhang-14}.
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=0.9\linewidth]{NDN Packets.pdf}
+    \caption{NDN Packet Formats}
+    \label{NDN Packets}
+\end{figure}
+
+At the core of each NDN node (forwarder) are three key data structures:
+\begin{itemize}
+    \item \textbf{Content Store (CS)}: A cache that stores \DataPackets\ that pass through the node, allowing subsequent interests for the same content to be answered locally.
+    \item \textbf{Pending Interest Table (PIT)}: A record of interests that have been forwarded upstream, but remain unsatisfied. When the matching data are returned, the node checks the PIT to forward the data downstream to the requesting consumer.
+    \item \textbf{Forwarding Information Base (FIB)}: A table mapping name prefixes to output faces, guiding where an interest should be forwarded if the data are not available in the CS.
+\end{itemize}
+
+When a consumer issues an \InterestPacket, each NDN node (forwarder) along the path processes it according to a specific forwarding logic, as illustrated in Figure~\ref{NDN Packets Processing Flow} (blue arrows). Initially, the forwarder checks its Content Store (CS) to determine if the requested data is already cached locally. If so, it immediately returns the corresponding \DataPacket\ to the consumer. Otherwise, the forwarder examines its Pending Interest Table (PIT), which records interests that have been forwarded upstream but are still awaiting responses. If an identical interest is already pending, the forwarder aggregates this interest without forwarding it again. If no matching PIT entry exists, the forwarder consults its Forwarding Information Base (FIB), which maps name prefixes to outgoing interfaces (faces), and forwards the \InterestPacket\ upstream accordingly, simultaneously creating a corresponding PIT entry.
+
+\begin{figure*}[t]
+    \centering
+    \includegraphics[width=0.9\linewidth]{NDN Packets Processing Flow.pdf}
+    \caption{NDN Packets Processing Flow}
+    \label{NDN Packets Processing Flow}
+\end{figure*}
+
+Once the interest reaches a node that has the requested content (either the original producer or an intermediate cache), the corresponding \DataPacket\ is generated and transmitted downstream following the reverse path indicated by the PIT entries, as depicted in Figure~\ref{NDN Packets Processing Flow} (red arrows). Each forwarder receiving the \DataPacket\ first caches a copy in its CS for potential future requests, forwards it downstream according to the PIT entries, and subsequently removes the relevant entry from its PIT.
+
+In general, this NDN design significantly reduces redundant data transfers and leverages in-network caching, making it highly suitable for efficient content distribution.
+
+Many NDN deployments rely on the Named Data Link State Routing Protocol (NLSR) to disseminate routing and topology details. As shown in Figure \ref{NLSR Workflow}, NLSR is a name-based link state protocol that distributes link information and name-prefix advertisements as Link State Advertisements (LSAs). In this process, each node exchanges LSAs with its neighbours and builds a Link State Database (LSDB) that provides a global view of the network topology. Based on LSDB, each node calculates the optimal forwarding paths for every advertised prefix using standard link state algorithms (e.g. Dijkstra's shortest path). The resulting routing information is then stored in the FIB, allowing \InterestPackets\ to be routed efficiently to the appropriate producer or cache. However, because NLSR relies on periodic LSAs to update the network state, this convergence process can be slow, especially when producers move frequently.
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=1\linewidth]{NLSR Workflow.pdf}
+    \caption{NLSR Workflow}
+    \label{NLSR Workflow}
+\end{figure}
+
+When a producer moves, it must reregister its data prefix so that the updated routing information propagates across the network. As results, during the period:
+
+\begin{itemize}
+    \item \textbf{Slow routing convergence:} Due to the time required for a protocol like NLSR to update routing information in nodes, pending interests may still be routed to the producer's old location.
+    \item \textbf{Path disruption and packet loss:} Out-of-date sending information can cause \InterestPackets\ to wait until expired and be discarded because there is no data source at the previous location.
+    \item \textbf{Increased overhead:} Frequent re-advertisement of prefixes for highly mobile producers adds extra traffic to the control plane.
+\end{itemize}
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=0.9\linewidth]{NDN Producer Mobility Problem.pdf}
+    \caption{NDN Producer Mobility Problem}
+    \label{NDN Producer Mobility Problem}
+\end{figure}
+
+The mobility problem of the producer can be concluded in Figure \ref{NDN Producer Mobility Problem}. From the producer moving to re-establishing an available channel, a long process is required, including the entire NLSR workflow and \InterestPacket\ retransmission.
+
+Such responsive problems need more immediate approaches to handle without relying on global routing updates.
+
+\subsection{ICN and Its Implementations}
+The drive to shift network communication from host endpoints to named content was initially motivated by the limitations of IP-based architectures. In this context, numerous ICN architectures were proposed, such as Content-Centric Networking (CCN) \cite{Oehlmann-13}, Data-Orientated Network Architecture (DONA) \cite{Koponen-07}, Publish-Subscribe Internet (PSIRP) \cite{Lagutin-10}, and NetInf \cite{Xylomenos-14}. Among these, Named Data Networking (NDN) \cite{Zhang-14} has emerged as a leading design because its approach to naming \DataPackets\ independently of location naturally supports content retrieval even when endpoints move. However, although this naming flexibility benefits many applications, it does not automatically resolve challenges related to producer mobility. This is because NDN still relies on periodic routing updates to reflect a producer's new attachment point, during which pending interests may be misrouted or experience delays.
+
+Other notable ICN approaches, such as MobilityFirst \cite{Raychaudhuri-12} and XIA \cite{Naylor-14}, further emphasise alternative design choices. For example, MobilityFirst introduces a Global Name Resolution Service (GNRS) to decouple identity from location, and XIA adopts a Directed Acyclic Graph (DAG)-based addressing model. Despite their differences, these architectures show that moving beyond traditional host-based addressing involves trade-offs, and that even advanced solutions do not inherently overcome the rapid mobility challenges faced by producers. In contrast, NDN’s in-network caching and data-centric security simplify content retrieval but also introduce new challenges for handling frequent mobility \cite{Grassi-14,Jacobson-09}.
+
+\subsection{Mobility Solutions in IP Networks}
+Before addressing mobility in NDN, it is instructive to review how traditional IP networks approach mobility management. IP mobility solutions generally aim to maintain ongoing communications despite node movement, typically by providing mechanisms to ensure reachability and connectivity during location changes. However, these solutions must balance handoff latency, signaling overhead, and scalability, each introducing different tradeoffs depending on their specific design.
+
+Mobile IPv6 (MIPv6) \cite{Johnson-04} assigns to each mobile node a permanent \emph{home address} anchored at a stationary node called \emph{home agent}. When a node moves away from its home network, it obtains a temporary \emph{care-of address} at its new location and informs the home agent of this change of address through a \emph{Binding Update}. The home agent subsequently tunnels incoming packets to the mobile node at its new location, ensuring continuous communication but potentially introducing considerable delay due to indirect routing paths.
+
+To reduce the signaling overhead associated with frequent global Binding Updates, Hierarchical Mobile IPv6 (HMIPv6) \cite{Soliman-08} introduces a regional mobility anchor known as \emph{Mobility Anchor Point (MAP)}. Under this design, the mobile node obtains a \emph{regional care-of address} that remains unchanged as long as it remains within the local domain managed by the MAP. Consequently, only localised updates are required when the node moves within this domain, significantly reducing update overhead and latency compared to MIPv6.
+
+Proxy Mobile IPv6 (PMIPv6) \cite{Gundavelli-08} further simplifies mobility management by shifting the signaling responsibility entirely to the network infrastructure. In PMIPv6, dedicated network nodes, referred to as \emph{Local Mobility Anchors (LMAs)} and \emph{Mobile Access Gateways (MAGs)}, manage the mobility process without explicit participation of the mobile nodes. Although this approach greatly reduces complexity at mobile nodes, it increases the control plane signaling overhead within the network, potentially affecting scalability under high mobility rates.
+
+Lastly, the Locator/ID Separation Protocol (LISP) \cite{Farinacci-13} separates endpoint identities (EID) from routing locators (RLOCs), allowing for more flexible mobility management. When a node moves, its EID remains unchanged, while only the mapping between the EID and the new RLOC needs to be updated in a global mapping database. This decoupling can considerably reduce handoff latency and route reconfiguration overhead compared to tunnelling-based solutions; however, LISP’s performance heavily relies on the efficiency and responsiveness of its underlying mapping service.
+
+Survey studies such as \cite{Zhu-11} provide comparisons of IP mobile solutions, noting that:
+\begin{itemize}
+    \item MIPv6 typically experiences considerable hand-off delays and high signaling overhead due to tunnelling and frequent Binding Update messages.
+    \item HMIPv6 reduces end-to-end delay by confining updates within a local domain, but still suffers from overhead spikes in scenarios with dense mobile populations.
+    \item PMIPv6 can offer faster recovery than MIPv6; however, its reliance on centralised management and continuous binding updates increases the risk of congestion in the control plane.
+    \item LISP's performance, while promising in reducing route reconfigurations, is sensitive to the efficiency of its mapping resolution.
+\end{itemize}
+
+These performance trade-offs underline the challenges of supporting mobility in IP networks and provide a benchmark against which NDN-based solutions can be compared.
+
+A consistent lesson from IP mobility is the importance of a rendezvous or anchor mechanism for mapping stable identifiers to current network locations \cite{Zhu-11}. However, applying such mechanisms directly to NDN is challenging given its cache-based receiver-driven operation \cite{Lee-12}.
+
+\subsection{Mobility Research in NDN}
+Within NDN, mobility has been explored from two perspectives. On the one hand, consumer mobility is easier to handle, since consumers can simply reissue Interests from a new location. On the other hand, producer mobility remains problematic. After a producer moves, pending interests may be misrouted, leading to increased delays and packet loss. Multiple surveys have classified existing solutions into four broad categories \cite{Zhang-16,Abrar-23,Fayyaz-23}:
+\begin{itemize}
+    \item \emph{Routing-Based Approaches}: These update NDN routing upon producer movement. For example, MAP-Me sends update messages along the old path to install new forwarding entries \cite{Zeng-18}, but may introduce additional signaling overhead.
+    \item \emph{Name Resolution/Mapping}: These methods decouple the stable name from the producer’s current location using a mapping service \cite{Lee-12,Snamp-15}. Although scalable, they add extra lookup latency.
+    \item \emph{Tracing-Based Methods}: Such approaches leave a "breadcrumb" to direct interest to the new producer location \cite{Kite-18}. Although they can reduce packet loss, they require routers to maintain an additional state.
+    \item \emph{Data-Centric Schemes}: Techniques based on network caching or limited flooding allow interest groups to eventually locate the moved producer \cite{Jacobson-12,Wang-13}, although these may suffer from scalability issues.
+\end{itemize}
+
+Although each category has its merits, none fully addresses all performance metrics simultaneously, highlighting a significant gap in current research.
+
+\subsection{Flooding-Based Mobility Solutions in NDN}
+Several proposals have examined flooding as a means of systematically discovering a producer's new location when conventional routing is lacking. For example, MobiCCN \cite{Wang-13} combines greedy routing with localised flooding using an anchor near the producer's previous location to reduce global broadcast overhead. In another approach, Zhou et al. \cite{Zhou-14} employ a centralised controller to coordinate flood-based update messages during handovers. Publisher Mobility Support in CCN \cite{Han-14} uses direct flooding of update messages to refresh forwarding entries without external mapping.
+
+Collectively, these studies highlight a fundamental trade-off: Although flooding can guarantee reachability, its naive implementation can cause excessive overhead. None of these solutions systematically restricts the flood scope to balance responsiveness with network load, a critical gap that motivates our work.
+
+Our work on OptoFlood builds on these insights by introducing a controllable flooding mechanism. By applying hop limits, regional checks, and negative acknowledgement feedback, OptoFlood minimises duplication and confines the flood’s propagation. In doing so, it achieves a balance between rapid producer discovery and overhead reduction, making it suitable for networks of varying scales.
+
+\subsection{Comparative Performance Summary}
+To further elucidate the trade-offs inherent in each NDN mobility approach, Table \ref{Comparison of Different Approaches} presents a summary of key performance indicators. In this comparison, we examine four categories, route-based, mapping-based, tracing-based, and flooding-based approaches, against common metrics such as handoff delay, overhead, scalability, and real-time performance. As the table illustrates, although routing-based and tracing-based methods offer low hand-off delay, they tend to incur higher overhead or suffer from limited scalability. In contrast, mapping-based approaches maintain lower overhead but may introduce latency due to lookup operations. Flooding-based solutions, meanwhile, can achieve low delay if the flooding is properly scoped, yet their scalability remains a challenge.
+
+\begin{table*}[t]
+    \centering
+    \begin{tabular}{|c|c|c|c|c|}
+        \hline
+        \textbf{Approach} & \textbf{Hand-off Delay} & \textbf{Overhead} & \textbf{Scalability} & \textbf{Real-time} \\ \hline
+        Routing-based & Low & Medium-High & Medium & Yes \\ \hline
+        Mapping-based & Medium & Low & High & Limited by lookup \\ \hline
+        Tracing-based & Low & High & Poor & Good \\ \hline
+        Flooding-based & Low & High & Limited & Yes \\ \hline
+        OptoFlood & Low & Medium & Medium & Yes \\ \hline
+    \end{tabular}
+    \caption{Comparison of Different Approaches}
+    \label{Comparison of Different Approaches}
+\end{table*}
